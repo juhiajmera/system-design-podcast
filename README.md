@@ -2,7 +2,7 @@
 
 Learn system design for big-tech interviews as if you were 5 years old. Each topic starts as a short kids' story, then gives the real engineering version, the trade-offs, a line you can say in the interview, and a quiz question.
 
-**Live app:** https://&lt;your-username&gt;.github.io/system-design-podcast/
+**Live app:** https://juhiajmera.github.io/system-design-podcast/
 
 ## Features
 
@@ -12,7 +12,9 @@ Learn system design for big-tech interviews as if you were 5 years old. Each top
 - **Progress tracking:** mark topics as understood. Progress is saved in your browser.
 - Works on desktop and phone, in light and dark mode.
 
-## What's covered (31 episodes)
+## What's covered (43 episodes)
+
+**22 core concepts**
 
 | Chapter | Topics |
 |---|---|
@@ -20,8 +22,18 @@ Learn system design for big-tech interviews as if you were 5 years old. Each top
 | Getting to the server | DNS · CDN · Load balancer · API gateway · Polling, long polling & WebSockets |
 | Storing data | SQL vs NoSQL · Database indexes · Replication · Sharding · Consistent hashing · CAP theorem |
 | Making it fast | Caching · Bloom filter |
-| Reliability | Message queues · Rate limiting · Idempotency & retries · Unique ID generation · Monolith vs microservices |
-| Interview questions | URL shortener · News feed · Chat app · Video streaming platform · Collaborative document editor · Web crawler · Search autocomplete · Nearby places · Distributed key-value store · Notification system · Cloud file storage |
+| Reliability | Message queues · Rate limiting · Idempotency & retries · Unique ID generation · Monolith vs microservices · Consensus & leader election · Batch vs stream processing |
+
+**21 classic interview questions**, each worked through as requirements, estimates, components and deep dives
+
+| Area | Questions |
+|---|---|
+| Core web products | URL shortener · News feed · Photo sharing app · Search autocomplete · Notification system |
+| Real-time | Chat app · Collaborative document editor · Ride-hailing app · Gaming leaderboard |
+| Media & storage | Video streaming platform · Cloud file storage |
+| Money & correctness | Payment system · Ticket booking system |
+| Data at scale | Web crawler · Top-K trending · Metrics & monitoring system · Nearby places |
+| Infrastructure | Distributed key-value store · Distributed cache · Distributed message queue · Distributed job scheduler |
 
 ## How to run it
 
