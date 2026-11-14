@@ -12,28 +12,32 @@ Learn system design for big-tech interviews as if you were 5 years old. Each top
 - **Progress tracking:** mark topics as understood. Progress is saved in your browser.
 - Works on desktop and phone, in light and dark mode.
 
-## What's covered (43 episodes)
+## What's covered (60 episodes)
 
-**22 core concepts**
+**31 core concepts**
 
 | Chapter | Topics |
 |---|---|
 | Start here | How to answer a design question · Back-of-the-envelope math |
 | Getting to the server | DNS · CDN · Load balancer · API gateway · Polling, long polling & WebSockets |
-| Storing data | SQL vs NoSQL · Database indexes · Replication · Sharding · Consistent hashing · CAP theorem |
+| Storing data | SQL vs NoSQL · Database indexes · Replication · Sharding · Consistent hashing · CAP theorem · Consistency models · Distributed transactions · Object storage |
 | Making it fast | Caching · Bloom filter |
-| Reliability | Message queues · Rate limiting · Idempotency & retries · Unique ID generation · Monolith vs microservices · Consensus & leader election · Batch vs stream processing |
+| Reliability | Message queues · Rate limiting · Idempotency & retries · Unique ID generation · Monolith vs microservices · Consensus & leader election · Batch vs stream processing · Circuit breakers & backpressure · SLIs, SLOs & the nines · Multi-region & disaster recovery |
+| Security | Authentication & authorization |
+| Big data | Inverted index · MapReduce |
 
-**21 classic interview questions**, each worked through as requirements, estimates, components and deep dives
+**29 classic interview questions**, each worked through as requirements, estimates, components and deep dives
 
 | Area | Questions |
 |---|---|
-| Core web products | URL shortener · News feed · Photo sharing app · Search autocomplete · Notification system |
-| Real-time | Chat app · Collaborative document editor · Ride-hailing app · Gaming leaderboard |
-| Media & storage | Video streaming platform · Cloud file storage |
-| Money & correctness | Payment system · Ticket booking system |
-| Data at scale | Web crawler · Top-K trending · Metrics & monitoring system · Nearby places |
-| Infrastructure | Distributed key-value store · Distributed cache · Distributed message queue · Distributed job scheduler |
+| Search & discovery | Web search engine · Search autocomplete · Recommendation system · Top-K trending |
+| Core web products | URL shortener · News feed · Photo sharing app · Email service · Notification system |
+| Real-time | Chat app · Collaborative document editor · Ride-hailing app · Gaming leaderboard · Live streaming service |
+| Maps & location | Maps navigation service · Nearby places |
+| Media & storage | Video streaming platform · Cloud file storage · Distributed file system |
+| Money & correctness | Payment system · Ticket booking system · Ad click aggregation |
+| Counting & monitoring | View and like counter · Metrics & monitoring system |
+| Infrastructure | Web crawler · Distributed key-value store · Distributed cache · Distributed message queue · Distributed job scheduler |
 
 ## How to run it
 
