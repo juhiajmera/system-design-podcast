@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>System Design Storybook</title>
+<meta name="description" content="Core system design concepts explained like you're 5, as stories, a two-host podcast and quizzes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: episode/chapter list on the left like a book's contents, one open page on the right; stacks on phones. */
+:root {
+  --bg: #f3f6fb; --paper: #ffffff; --ink: #1b2540; --muted: #5b6684; --line: #dbe2ef;
+  --accent: #2f5bd8; --accent-soft: #e4ebfc; --sun: #ffd23f; --sun-soft: #fff6cf;
+  --good: #1f8a5b; --good-soft: #def4ea; --bad: #c2413b; --bad-soft: #fbe3e1;
+  --deck: #1b2540; --deck-fg: #f3f6fb; --deck-muted: #a9b4d6;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #10152a; --paper: #182040; --ink: #e8ecf8; --muted: #9ea8c6; --line: #2a3561;
+  --accent: #7d9cff; --accent-soft: #233067; --sun: #ffd23f; --sun-soft: #3a3420;
+  --good: #5fd39c; --good-soft: #173a2c; --bad: #ff8a80; --bad-soft: #43201f;
+  --deck: #0a0f22; --deck-fg: #e8ecf8; --deck-muted: #8f9bc2; color-scheme: dark; } }
+
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px; }
+[hidden] { display: none !important; }
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+h1 { font-family: var(--display); font-weight: 700; font-size: clamp(1.8rem, 4vw, 2.6rem); line-height: 1.1; margin: 0; text-wrap: balance; }
+h1 .hl { background: linear-gradient(transparent 58%, var(--sun) 58%); padding: 0 .1em; }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 60ch; }
+.right-col { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+.progress { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { width: 160px; height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--good); width: 0; transition: width .3s; }
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.tab { font: 600 .95rem var(--display); border: 2px solid var(--line); background: var(--paper); color: var(--ink); padding: 6px 14px; border-radius: 99px; cursor: pointer; }
+.tab[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+.layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
+nav.toc { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 14px; position: sticky; top: 12px; max-height: calc(100vh - 40px); overflow: auto; }
+.toc h3 { font: 600 .72rem var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 14px 8px 6px; }
+.toc h3:first-child { margin-top: 2px; }
+.toc button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: none; color: var(--ink); font: 600 .95rem var(--body); padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.toc button:hover { background: var(--accent-soft); }
+.toc button[aria-current="true"] { background: var(--accent); color: #fff; }
+.dot { width: 18px; height: 18px; flex: none; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; font-size: 11px; color: transparent; }
+.done .dot { background: var(--good); border-color: var(--good); color: #fff; }
+.toc button[aria-current="true"] .dot { border-color: #fff; }
+.epnum { font: 600 .75rem var(--mono); color: var(--muted); width: 22px; flex: none; font-variant-numeric: tabular-nums; }
+.toc button[aria-current="true"] .epnum { color: #fff; }
+
+main.page { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: clamp(18px, 3.5vw, 36px); min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+.eyebrow { font: 600 .75rem var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.page h2 { font-family: var(--display); font-weight: 700; font-size: clamp(1.6rem, 3.4vw, 2.2rem); line-height: 1.15; margin: 4px 0 0; text-wrap: balance; }
+.tagline { color: var(--muted); margin: 4px 0 0; }
+.head-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 12px; }
+.story { background: var(--sun-soft); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; }
+.lbl { font: 700 .78rem var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.story .lbl { color: var(--ink); }
+.story p { margin: 0; font-size: 1.12rem; line-height: 1.65; max-width: 65ch; }
+.section { display: flex; flex-direction: column; gap: 8px; }
+.section p, .section ul { margin: 0; max-width: 68ch; }
+.section ul { padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; }
+.flow-box { overflow-x: auto; padding: 4px 2px 8px; }
+.flow { display: flex; align-items: center; gap: 8px; width: max-content; }
+.node { border: 2px solid var(--ink); background: var(--paper); border-radius: 10px; padding: 8px 12px; font: 600 .9rem var(--display); white-space: nowrap; box-shadow: 3px 3px 0 var(--accent-soft); }
+.stack { display: flex; flex-direction: column; gap: 6px; }
+.arrow { color: var(--accent); font: 700 1.2rem var(--mono); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.two > * { min-width: 0; }
+.say { border-left: 4px solid var(--accent); padding: 4px 0 4px 14px; }
+code, .mono { font-family: var(--mono); font-size: .88em; background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; }
+
+.quiz { border: 2px dashed var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.quiz .q { font: 600 1.05rem var(--display); margin: 0; }
+.opts { display: flex; flex-direction: column; gap: 8px; }
+.opt { text-align: left; border: 2px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 10px; padding: 10px 12px; font: 600 .95rem var(--body); cursor: pointer; }
+.opt:hover:not(:disabled) { border-color: var(--accent); }
+.opt.right { border-color: var(--good); background: var(--good-soft); }
+.opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+.opt:disabled { cursor: default; }
+.why { margin: 0; color: var(--muted); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); padding-top: 18px; }
+.btn { font: 600 .95rem var(--display); border-radius: 10px; padding: 9px 16px; cursor: pointer; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); }
+.btn.primary { background: var(--ink); color: var(--paper); }
+.btn.got { border-color: var(--good); background: var(--good); color: #fff; }
+.btn:disabled { opacity: .4; cursor: default; }
+.navbtns { display: flex; gap: 8px; }
+button:focus-visible, select:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+.score { font: 700 1.4rem var(--display); }
+.qa-list { display: flex; flex-direction: column; gap: 16px; }
+
+/* Podcast */
+.deck { background: var(--deck); color: var(--deck-fg); border-radius: 16px; padding: clamp(18px, 3vw, 28px); display: flex; flex-direction: column; gap: 18px; }
+.deck .eyebrow { color: var(--sun); }
+.deck h2 { color: var(--deck-fg); }
+.deck .tagline { color: var(--deck-muted); }
+.hosts { display: flex; flex-wrap: wrap; gap: 10px; }
+.host { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: 99px; border: 1px solid rgba(255,255,255,.15); font-size: .9rem; color: var(--deck-muted); }
+.host b { color: var(--deck-fg); font-family: var(--display); font-weight: 600; }
+.avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font: 700 .95rem var(--display); color: #1b2540; }
+.av-M { background: var(--sun); }
+.av-L { background: #9fd8ff; }
+.host.talking { border-color: var(--sun); color: var(--deck-fg); }
+.host.talking .avatar { animation: bob .6s ease-in-out infinite alternate; }
+@keyframes bob { to { transform: translateY(-3px) scale(1.06); } }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.ctrl { width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); background: transparent; color: var(--deck-fg); font: 700 1rem var(--mono); cursor: pointer; display: grid; place-items: center; }
+.ctrl:disabled { opacity: .35; cursor: default; }
+.ctrl.play { width: 60px; height: 60px; background: var(--sun); color: #1b2540; border-color: var(--sun); font-size: 1.3rem; }
+.ctrl svg { width: 20px; height: 20px; fill: currentColor; }
+.ctrl.play svg { width: 24px; height: 24px; }
+.meter { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.track { height: 6px; border-radius: 99px; background: rgba(255,255,255,.15); overflow: hidden; }
+.track > i { display: block; height: 100%; width: 0; background: var(--sun); transition: width .25s; }
+.meta { display: flex; justify-content: space-between; gap: 8px; font: .8rem var(--mono); color: var(--deck-muted); font-variant-numeric: tabular-nums; }
+.settings { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: .88rem; color: var(--deck-muted); }
+.settings label { display: flex; align-items: center; gap: 8px; }
+.settings select { background: transparent; color: var(--deck-fg); border: 1px solid rgba(255,255,255,.25); border-radius: 8px; padding: 4px 6px; font: inherit; max-width: 220px; }
+.settings select option { color: #1b2540; background: #fff; }
+.settings input[type="checkbox"] { accent-color: var(--sun); width: 16px; height: 16px; }
+.notice { background: var(--bad-soft); color: var(--ink); border-radius: 10px; padding: 12px 14px; }
+.transcript { display: flex; flex-direction: column; gap: 4px; }
+.tline { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; text-align: left; border: 0; background: none; color: var(--ink); font: inherit; padding: 8px 10px; border-radius: 10px; cursor: pointer; line-height: 1.55; }
+.tline:hover { background: var(--accent-soft); }
+.tline .who { font: 600 .82rem var(--display); padding-top: 2px; }
+.tline .who.M { color: var(--accent); }
+.tline .who.L { color: var(--good); }
+.tline.pause { color: var(--muted); font-style: italic; }
+.tline.now { background: var(--sun-soft); }
+.tline.past { color: var(--muted); }
+
+@media (max-width: 820px) {
+  .layout { grid-template-columns: 1fr; }
+  nav.toc { position: static; max-height: none; }
+  .toc .group { display: flex; flex-wrap: wrap; gap: 6px; }
+  .toc .group button { width: auto; border: 1px solid var(--line); }
+  .two { grid-template-columns: 1fr; }
+  .right-col { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>System Design, <span class="hl">explained like you're 5</span></h1>
+      <p class="sub">Each idea starts as a short story you could tell a kid, then gets the grown-up version, the trade-offs and the lines that land well in a system design interview. Read it, listen to it as a podcast, or quiz yourself.</p>
+    </div>
+    <div class="right-col">
+      <div class="tabs" role="group" aria-label="Mode">
+        <button class="tab" id="tab-learn" aria-pressed="true">Read</button>
+        <button class="tab" id="tab-listen" aria-pressed="false">Podcast</button>
+        <button class="tab" id="tab-quiz" aria-pressed="false">Quiz me on everything</button>
+      </div>
+      <div class="progress"><div class="bar"><i id="bar"></i></div><span id="ptext">0 / 0 understood</span></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" id="toc" aria-label="Topics"></nav>
+    <main class="page" id="page"></main>
+  </div>
+</div>
+
+<script>
+const TOPICS = [
+  // ---------- Start here ----------
+  { id:"framework", group:"Start here", title:"How to answer a design question", tag:"The 45-minute game plan",
+    eli5:"Imagine someone asks you to build a treehouse. You don't grab a hammer straight away. First you ask: how many friends will play in it? Does it need a roof? Then you guess how big it should be, draw a picture, build the main parts, and finally talk about what could go wrong, like rain or a broken ladder.",
+    real:"Interviewers grade your process as much as your answer. A steady structure keeps you from rambling and shows senior judgment.",
+    flow:["Requirements","Estimates","API","High-level boxes","Deep dive","Trade-offs"],
+    points:["<b>Requirements (5 min):</b> functional (what it does) and non-functional (scale, latency, availability, consistency). Ask what is out of scope.","<b>Estimates (3–5 min):</b> users, QPS, storage, bandwidth. Rough numbers are enough.","<b>API & data model:</b> 3–5 endpoints and the main tables or objects.","<b>High-level design:</b> clients, load balancer, services, database, cache, queue.","<b>Deep dive:</b> the interviewer picks 1–2 hard parts. Go deep there.","<b>Wrap-up:</b> bottlenecks, failure modes, what you would build next."],
+    say:"Before I draw anything, can I confirm the scope? I'm assuming 100M daily users, reads far outnumber writes, and a few seconds of staleness is fine.",
+    q:"The interviewer says \"Design YouTube.\" What should you do first?",
+    opts:["Draw the database schema","Ask clarifying questions about scope and scale","Pick Kafka vs RabbitMQ","Start writing code"], a:1,
+    why:"Requirements decide everything else. Jumping into components without scope is the most common reason candidates get marked down." },
+
+  { id:"estimates", group:"Start here", title:"Back-of-the-envelope math", tag:"Quick guesses with big numbers",
+    eli5:"If every kid in your school eats 2 cookies a day, and there are 500 kids, the cafeteria needs about 1,000 cookies. You don't need the exact number. You need to know if it's a box of cookies or a truck of cookies.",
+    real:"Estimates tell you if one machine is enough or if you need sharding, caching and CDNs. Round hard and say your assumptions out loud.",
+    flow:["Daily users","Actions per user","Requests / sec","Storage / year"],
+    points:["1 day ≈ 86,400 s ≈ <span class='mono'>10⁵</span> s. So 1M requests/day ≈ 12 QPS.","Peak ≈ 2–3× average.","Memory read ~100 ns · SSD read ~100 µs · disk seek ~10 ms · cross-continent round trip ~150 ms.","1 KB × 1B items = 1 TB. A single DB node is comfortable at a few TB.","One modern server handles roughly thousands to tens of thousands of simple QPS."],
+    say:"500M daily users posting 2 times a day is 1B writes a day, about 12K writes per second on average and maybe 30K at peak. That's too many for one database, so we'll shard.",
+    q:"About how many requests per second is 100 million requests per day?",
+    opts:["~12","~1,200","~120,000","~12,000,000"], a:1,
+    why:"100M ÷ 10⁵ seconds ≈ 1,000. More precisely about 1,157 QPS." },
+
+  // ---------- Getting to the server ----------
+  { id:"dns", group:"Getting to the server", title:"DNS", tag:"The internet's phone book",
+    eli5:"You know your friend's name is Maya, but to call her you need her phone number. DNS is the phone book that turns a name like google.com into a number the computer can dial.",
+    real:"DNS maps domain names to IP addresses. It is hierarchical (root, then .com, then google.com) and heavily cached at every layer with a TTL. Geo-DNS can return a different IP depending on where the user is, which is a cheap first layer of load balancing.",
+    flow:["Browser","Resolver cache","Root / TLD","Authoritative DNS","IP address"],
+    points:["Low TTL lets you fail over fast, but means more lookups.","DNS-based load balancing is coarse because clients cache answers.","Usually not the bottleneck, but mention it when designing global systems."],
+    say:"Users hit geo-DNS first, which sends them to the nearest region.",
+    q:"Why can changing a DNS record take a while to reach every user?",
+    opts:["DNS servers are slow","Answers are cached until their TTL expires","IP addresses are reused","Browsers block DNS"], a:1,
+    why:"Resolvers and clients keep the old answer until the TTL runs out." },
+
+  { id:"cdn", group:"Getting to the server", title:"CDN", tag:"Little shops near your house",
+    eli5:"Instead of every child in the world driving to one giant toy factory, the factory puts small toy shops in every town. You go to the shop down the street and get your toy much faster.",
+    real:"A Content Delivery Network caches static content like images, video, JavaScript and CSS on edge servers close to users. It cuts latency and takes huge load off your origin servers.",
+    flow:["User in Tokyo","Edge server (Tokyo)",["Hit → serve","Miss → origin"]],
+    points:["<b>Push CDN:</b> you upload content ahead of time. Good for content that rarely changes.","<b>Pull CDN:</b> the edge fetches from origin on first request, then caches.","Invalidate with versioned URLs (<code>app.v42.js</code>) instead of purging.","Essential for any video, image or global system design."],
+    say:"Video segments are served from the CDN; our origin only sees cache misses.",
+    q:"Which content benefits most from a CDN?",
+    opts:["A user's private bank balance","Profile pictures and video files","Writes to the database","Password checks"], a:1,
+    why:"Large, static, widely shared files are a CDN's sweet spot. Personalized or write traffic goes to your servers." },
+
+  { id:"lb", group:"Getting to the server", title:"Load balancer", tag:"The lunch line helper",
+    eli5:"At lunch there are three serving ladies. A helper at the front points each kid to the lady with the shortest line, so nobody waits forever and no lady gets overwhelmed. If one lady goes home sick, the helper stops sending kids to her.",
+    real:"A load balancer spreads requests across many servers and removes unhealthy ones using health checks. It lets you scale horizontally and survive server failures.",
+    flow:["Clients","Load balancer",["Server A","Server B","Server C"]],
+    points:["Algorithms: round robin, least connections, consistent hashing on user ID.","<b>Layer 4</b> (TCP, fast, blind to content) vs <b>Layer 7</b> (HTTP, can route by path or header).","Keep servers <b>stateless</b> so any server can handle any request; put session data in a cache or database.","The load balancer itself needs redundancy, such as an active-passive pair."],
+    say:"Our app servers are stateless behind a layer 7 load balancer, so we can add servers as traffic grows.",
+    q:"Why do we want web servers to be stateless?",
+    opts:["So they use less CPU","So any server can handle any request and we can add or remove servers freely","So they don't need a database","So the load balancer is not needed"], a:1,
+    why:"If a server holds a user's session, losing it loses the session, and you can't freely rebalance." },
+
+  { id:"gateway", group:"Getting to the server", title:"API gateway", tag:"The front desk of a hotel",
+    eli5:"When you visit a big hotel, you don't wander into the kitchen or laundry room. You talk to the front desk. They check your room key and send your request to the right people.",
+    real:"An API gateway is a single entry point in front of many services. It handles cross-cutting work: authentication, rate limiting, routing, request shaping and logging.",
+    flow:["Mobile / Web","API gateway",["User service","Feed service","Payment service"]],
+    points:["Keeps auth and throttling out of every individual service.","Can become a bottleneck or single point of failure, so run several instances.","Often sits behind a load balancer, or plays that role itself."],
+    say:"The gateway validates the auth token and applies per-user rate limits before routing to the feed service.",
+    q:"Which job does NOT usually belong in an API gateway?",
+    opts:["Checking auth tokens","Rate limiting","Running the core business logic for checkout","Routing to the right service"], a:2,
+    why:"Business logic lives in services. The gateway stays thin and generic." },
+
+  { id:"protocols", group:"Getting to the server", title:"Polling, long polling & WebSockets", tag:"Are we there yet?",
+    eli5:"On a car trip, you could ask \"Are we there yet?\" every minute. That's polling. Or you ask once and Dad only answers when you arrive. That's long polling. Or you keep a walkie-talkie open and Dad talks whenever anything happens. That's a WebSocket.",
+    real:"For real-time features like chat, live scores or notifications, the server needs to push data. WebSockets keep a persistent two-way connection open.",
+    flow:["Client","⇄ open connection ⇄","Chat server"],
+    points:["<b>Short polling:</b> simple, wasteful.","<b>Long polling:</b> the server holds the request until data exists. A decent fallback.","<b>WebSockets:</b> full duplex and low latency, but connections are stateful, so you need to track which server holds which user.","<b>Server-Sent Events:</b> one-way push from server to client over HTTP."],
+    say:"Each chat server holds WebSocket connections. A presence service maps each user ID to the server holding their connection.",
+    q:"For a chat app with millions of online users, what's the main extra challenge with WebSockets?",
+    opts:["They can't send text","Connections are long-lived and stateful, so you must know which server holds each user","They only work on mobile","They need a CDN"], a:1,
+    why:"Stateful connections complicate scaling and routing. That's the part interviewers want you to address." },
+
+  // ---------- Storing data ----------
+  { id:"sqlnosql", group:"Storing data", title:"SQL vs NoSQL", tag:"Filing cabinet or toy bins",
+    eli5:"SQL is a filing cabinet where every folder must have the same labeled sections: name, age, address. NoSQL is a set of toy bins: you can throw in whatever shape you want, and it's very easy to add more bins.",
+    real:"Relational databases give strong schemas, joins and ACID transactions. NoSQL stores (key-value, document, wide-column, graph) trade some of that for flexible schemas and easier horizontal scaling.",
+    flow:[["SQL: tables, joins, ACID"],"vs",["NoSQL: key-value, document, wide-column"]],
+    points:["Pick SQL for money, orders, inventory: anything needing transactions.","Pick NoSQL for huge write volume, simple access patterns and flexible data like feeds, logs and sessions.","Google examples: Spanner is globally consistent SQL; Bigtable is wide-column NoSQL.","Justify your choice with access patterns, not hype."],
+    say:"Payments go in a relational database for transactions; the activity log goes in a wide-column store because it's append-heavy and queried by user and time.",
+    q:"You're storing bank transfers between accounts. Best default?",
+    opts:["A relational database with transactions","A key-value cache only","Plain files on disk","A CDN"], a:0,
+    why:"Moving money needs atomicity: both sides of the transfer happen, or neither." },
+
+  { id:"index", group:"Storing data", title:"Database indexes", tag:"The index at the back of a book",
+    eli5:"To find \"dinosaurs\" in a big book, you could read every page. Or you flip to the index at the back, which says \"dinosaurs, page 42,\" and jump straight there.",
+    real:"An index, usually a B-tree or an LSM-tree in write-heavy stores, lets the database find rows without scanning the whole table. Reads get much faster; writes get a little slower because the index must be updated too.",
+    flow:["Query: email = x","Index (B-tree)","Row on page 42"],
+    points:["Index the columns you filter or sort by.","Too many indexes slow writes and use storage.","Composite index order matters: <code>(user_id, created_at)</code> serves \"latest posts for a user\"."],
+    say:"We'll add a composite index on user ID and created-at, so loading a user's timeline is one range scan.",
+    q:"What's the main cost of adding an index?",
+    opts:["Reads get slower","Writes get slower and use more storage","Data becomes inconsistent","Queries stop working"], a:1,
+    why:"Every insert or update must also update the index." },
+
+  { id:"replication", group:"Storing data", title:"Replication", tag:"Photocopies of your homework",
+    eli5:"You make photocopies of your homework and give them to friends. If you lose yours, a friend still has a copy. And lots of people can read the copies at the same time.",
+    real:"Replication keeps copies of data on multiple machines for availability and read scaling. The common setup is one leader taking writes and several followers serving reads.",
+    flow:["Writes","Leader",["Follower 1","Follower 2"],"Reads"],
+    points:["<b>Synchronous:</b> safer, slower writes. <b>Asynchronous:</b> faster, but followers can lag, giving stale reads.","Replication lag causes \"I posted but can't see my post.\" Fix it with read-your-own-writes: read from the leader for that user right after a write.","Leader failover needs care to avoid two leaders, which is called split brain.","Multi-leader or leaderless quorum setups exist for multi-region writes."],
+    say:"We replicate across three zones. Reads go to followers, and a user's own profile reads go to the leader for a few seconds after they edit it.",
+    q:"A user updates their name, refreshes, and sees the old name. Most likely cause?",
+    opts:["The CDN is down","Reading from a follower that hasn't caught up (replication lag)","The index is missing","DNS TTL"], a:1,
+    why:"Asynchronous replicas lag behind the leader for a short time." },
+
+  { id:"sharding", group:"Storing data", title:"Sharding", tag:"Splitting the library",
+    eli5:"One library gets too full of books. So you build three libraries: A to H books go to the first, I to P to the second, Q to Z to the third. Each one is small and fast again.",
+    real:"Sharding, also called partitioning, splits data across machines by a shard key, so each machine holds only part of the data and part of the load.",
+    flow:["user_id","hash(user_id) mod N",["Shard 0","Shard 1","Shard 2"]],
+    points:["<b>Choosing the key is the whole game.</b> It should spread load evenly and keep common queries on one shard.","<b>Hot spots:</b> a celebrity user can overload one shard.","Cross-shard joins and transactions are hard and slow.","Range sharding helps range queries but risks hot spots; hash sharding spreads load but breaks ranges.","Resharding with plain hash mod N moves almost all data. See consistent hashing."],
+    say:"We shard messages by conversation ID, so loading one chat hits exactly one shard.",
+    q:"What makes a bad shard key?",
+    opts:["One that spreads users evenly","One like country, where a few values hold most of the traffic","A hashed user ID","One used in most queries"], a:1,
+    why:"Skewed keys create hot shards that melt while others sit idle." },
+
+  { id:"consistent", group:"Storing data", title:"Consistent hashing", tag:"Musical chairs that barely moves",
+    eli5:"Kids sit in a circle, and each toy goes to the next kid clockwise from where it lands. When a new kid joins the circle, only the toys right next to them move. Everyone else keeps their toys.",
+    real:"Consistent hashing places servers and keys on a hash ring. Each key belongs to the next server clockwise. Adding or removing a server only moves about one Nth of the keys instead of nearly all of them.",
+    flow:["hash(key)","Point on ring","Next server clockwise"],
+    points:["Used in distributed caches, Dynamo and Cassandra-style stores, and load balancers.","<b>Virtual nodes:</b> each server appears many times on the ring to smooth out uneven load.","Contrast with hash mod N, where changing N reshuffles nearly everything."],
+    say:"Cache nodes sit on a consistent-hash ring with virtual nodes, so losing a node only invalidates its slice of the keyspace.",
+    q:"You have 10 cache servers using consistent hashing and add an 11th. Roughly how many keys move?",
+    opts:["All of them","About half","About 1 in 11 of them","None"], a:2,
+    why:"Only the keys that now fall in the new server's slice move." },
+
+  { id:"cap", group:"Storing data", title:"CAP theorem", tag:"When the phone line breaks",
+    eli5:"You and your friend each have a notebook of scores. The phone line between you breaks. Someone asks you the score. You can either answer right away, but it might be old, or say \"wait until the line is fixed,\" which is correct but gives no answer now. You can't have both while the line is broken.",
+    real:"When a network partition happens, a distributed system must choose between Consistency, meaning every read sees the latest write, and Availability, meaning every request gets an answer. Partitions will happen, so the real choice is C or A during one.",
+    flow:["Network partition!",["CP: refuse / wait","AP: answer, maybe stale"]],
+    points:["<b>CP:</b> banking, inventory, leader election. Examples: Spanner, ZooKeeper.","<b>AP:</b> social feeds, like counts, shopping carts. Examples: Cassandra, Dynamo-style stores.","PACELC adds: even with no partition, you trade latency against consistency.","Say which parts of your design need which. Different features can choose differently."],
+    say:"For like counts we choose availability and eventual consistency; for payments we choose consistency.",
+    q:"For a \"likes\" counter on a post, which is usually the better choice?",
+    opts:["Strong consistency, block until all replicas agree","Availability with eventual consistency","Neither; use a CDN","Store likes on the client only"], a:1,
+    why:"A like count that is briefly off by a few is fine. A blocked page is not." },
+
+  // ---------- Making it fast ----------
+  { id:"cache", group:"Making it fast", title:"Caching", tag:"Snacks on the kitchen counter",
+    eli5:"Your favorite snacks are in the basement. Going down every time is slow, so Mom keeps a few on the kitchen counter. Most of the time you grab from the counter. Only when it's empty do you go to the basement.",
+    real:"A cache like Redis or Memcached keeps hot data in memory so most reads skip the slow database.",
+    flow:["App","Cache",["Hit → return","Miss → DB → fill cache"]],
+    points:["<b>Cache-aside:</b> the app checks the cache, and on a miss reads the database and fills the cache. The most common pattern.","<b>Write-through:</b> write to cache and database together. <b>Write-back:</b> write to cache and flush later, which is fast but risky.","<b>Eviction:</b> LRU, least recently used, is the usual default. Set TTLs.","<b>Invalidation</b> is the hard part: delete the cache key on update.","<b>Thundering herd:</b> a hot key expires and thousands of requests hit the database at once. Fix it with request coalescing or jittered TTLs."],
+    say:"We cache the rendered home feed per user for 60 seconds with cache-aside, and delete the key when the user posts.",
+    q:"A very popular cache key expires and the database gets flooded. What is this called?",
+    opts:["Split brain","Thundering herd, or cache stampede","Replication lag","Hot partition"], a:1,
+    why:"Many requests miss at the same moment and all rush the database." },
+
+  { id:"bloom", group:"Making it fast", title:"Bloom filter", tag:"The \"definitely not here\" list",
+    eli5:"A bouncer has a quick list. If your name is not on it, you're definitely not invited. If it is on it, you're probably invited, so he checks the big guest book to be sure.",
+    real:"A Bloom filter is a tiny bit array plus a few hash functions that answers \"is X in the set?\" with no false negatives and a small chance of false positives. It saves expensive lookups for things that don't exist.",
+    flow:["Is key here?","Bloom filter",["No → skip DB","Maybe → check DB"]],
+    points:["Used in Bigtable and LSM stores to skip reading files that can't contain a key.","Great for \"has this crawler seen this URL?\" or quick \"is this username taken?\" pre-checks.","You can't delete from a basic Bloom filter. Counting Bloom filters can."],
+    say:"The crawler checks a Bloom filter before fetching a URL, so we rarely recrawl pages and use a fraction of the memory a full set would need.",
+    q:"A Bloom filter says an item is NOT in the set. How sure can you be?",
+    opts:["100% sure it isn't","50% sure","It might still be there","It depends on the cache"], a:0,
+    why:"Bloom filters never give false negatives, only false positives." },
+
+  // ---------- Reliability ----------
+  { id:"queue", group:"Reliability", title:"Message queues", tag:"The suggestion box",
+    eli5:"Instead of everyone shouting requests at the teacher at once, kids drop notes in a box. The teacher reads them one at a time when she's ready. Nobody has to stand and wait, and no note gets lost.",
+    real:"A message queue such as Kafka, Pub/Sub, RabbitMQ or SQS decouples producers from consumers. It absorbs traffic spikes, lets slow work happen in the background, and lets you retry failures.",
+    flow:["Upload service","Queue",["Worker: thumbnail","Worker: transcode"]],
+    points:["Use it for anything that doesn't need to finish before replying: emails, video processing, fan-out of feeds.","<b>Delivery:</b> at-least-once is the usual guarantee, so consumers must be idempotent.","Pub/sub lets many consumers read the same event.","Watch queue depth as a key health metric. Dead-letter queues catch poison messages."],
+    say:"Upload returns immediately; a transcode job goes on the queue and workers scale on queue depth.",
+    q:"Why put video transcoding behind a queue?",
+    opts:["Queues make video smaller","The user doesn't have to wait, and spikes are absorbed by workers","Queues replace the database","It removes the need for storage"], a:1,
+    why:"Slow work moves off the request path, and workers process at their own pace." },
+
+  { id:"ratelimit", group:"Reliability", title:"Rate limiting", tag:"One cookie token at a time",
+    eli5:"You get 5 cookie tokens in a jar, and one new token appears every minute. Each cookie costs a token. If the jar is empty, you wait. You can eat a few fast, but not the whole box.",
+    real:"Rate limiting protects services from abuse and overload by capping requests per user, IP address or API key.",
+    flow:["Request","Token bucket for user",["Token → allow","Empty → 429"]],
+    points:["<b>Token bucket:</b> allows short bursts with a smooth average. The most common answer.","<b>Leaky bucket:</b> a steady output rate.","<b>Fixed window</b> is simple but allows double bursts at the edges; <b>sliding window</b> fixes that.","Distributed limits keep counters in Redis with atomic increments.","Return HTTP 429 with a Retry-After header."],
+    say:"A token bucket per API key in Redis, 100 requests per minute with bursts up to 20.",
+    q:"Which algorithm lets a user make a quick burst but caps their average rate?",
+    opts:["Token bucket","Round robin","Consistent hashing","LRU"], a:0,
+    why:"Saved-up tokens allow a burst; the refill rate sets the average." },
+
+  { id:"idempotency", group:"Reliability", title:"Idempotency & retries", tag:"Pressing the elevator button twice",
+    eli5:"Pressing the elevator button five times still brings one elevator. That's idempotent. But if every press bought you a new ice cream, pressing five times would be a big mess.",
+    real:"Networks fail, so clients retry. An idempotent operation gives the same result no matter how many times it runs. For things like payments, clients send an idempotency key so the server can ignore duplicates.",
+    flow:["Pay $10 (key=abc)","Server checks key",["New → charge","Seen → same result"]],
+    points:["GET, PUT and DELETE should be idempotent; POST usually isn't unless you make it so.","Retry with <b>exponential backoff and jitter</b> so clients don't all retry at the same instant.","Combine with at-least-once queues to get effectively-once processing."],
+    say:"The client generates an idempotency key per checkout; the payment service stores it, so a retried request never charges twice.",
+    q:"A payment request times out and the app retries. How do you prevent a double charge?",
+    opts:["Never retry","Use an idempotency key the server deduplicates on","Make the timeout longer","Use a CDN"], a:1,
+    why:"The server remembers the key and returns the first result instead of charging again." },
+
+  { id:"ids", group:"Reliability", title:"Unique ID generation", tag:"Name tags without a meeting",
+    eli5:"Every kid in many classrooms needs a different name tag, but the teachers can't keep calling each other. So each tag is today's time, plus the classroom number, plus a counter. No two tags can ever match.",
+    real:"Auto-increment IDs don't work across many database shards. Snowflake-style IDs pack a timestamp, a machine ID and a sequence number into 64 bits, so they're unique, roughly time-sorted, and need no coordination.",
+    flow:["41 bits: time","10 bits: machine","12 bits: sequence"],
+    points:["UUIDs are simple but 128 bits and not sortable. UUID version 7 is time-ordered.","A central ticket server works but is a bottleneck and single point of failure.","Time-sortable IDs make \"latest first\" queries cheap.","Watch for clock skew between machines."],
+    say:"We generate 64-bit Snowflake-style IDs on each app server, so IDs are unique and sort by creation time.",
+    q:"Why not use a single database's auto-increment for IDs at Google scale?",
+    opts:["Numbers run out","It becomes a bottleneck and single point of failure across shards","It's not secure","IDs must be strings"], a:1,
+    why:"Every write in the system would depend on one counter." },
+
+  { id:"micro", group:"Reliability", title:"Monolith vs microservices", tag:"One big robot or a team of small ones",
+    eli5:"One giant robot that cooks, cleans and does homework is easy to start, but if its arm breaks, everything stops. A team of small robots each does one job. If the cleaning robot breaks, dinner still gets cooked, but now they have to talk to each other a lot.",
+    real:"A monolith is one deployable app: simple to build and debug. Microservices split features into independent services owned by separate teams that deploy and scale independently, at the cost of network calls, distributed failures and operational overhead.",
+    flow:[["Monolith"],"vs",["Users svc","Feed svc","Media svc"]],
+    points:["Start with a monolith for small teams; split when teams or scaling needs diverge.","Each service owns its data. Don't share a database between services.","You now need service discovery, tracing, timeouts and circuit breakers.","In interviews, split by clear responsibilities with different scaling needs."],
+    say:"I'll split media processing into its own service because it scales on CPU, unlike the read-heavy feed service.",
+    q:"What's a real cost of microservices?",
+    opts:["You can't scale anything","More network calls and harder debugging of failures across services","You must use SQL","Only one team can work at a time"], a:1,
+    why:"Every boundary is a network hop that can fail or slow down." },
+
+  // ---------- Interview questions (full designs) ----------
+  { id:"q-shortener", kind:"design", group:"Interview questions", title:"Design a URL shortener", tag:"Turn a long link into a tiny one",
+    eli5:"At a coat check, you hand over your big coat and get a tiny ticket with a number. Later you show the ticket and get your exact coat back. A URL shortener gives you a tiny ticket for a giant web address.",
+    real:"Map a short code to a long URL, then redirect anyone who visits the short code. It's extremely read-heavy, so the design is mostly about generating unique codes and serving redirects fast.",
+    flow:["User","Load balancer","App servers",["Cache: code → URL","Key-value DB"]],
+    points:["<b>Requirements:</b> create a short link, redirect fast, optional custom alias and expiry. Reads outnumber writes about 100 to 1.","<b>Estimates:</b> 100M new links a month is about 40 writes per second and 4,000 redirects per second. 7 base-62 characters give 62⁷, about 3.5 trillion codes.","<b>API:</b> <code>POST /links {longUrl}</code> returns a code; <code>GET /{code}</code> returns a 301 or 302 redirect.","<b>Code generation:</b> base-62 encode a unique ID from a counter or Snowflake-style generator. Avoid hashing plus collision checks if you can.","<b>Storage:</b> a simple key-value store keyed by code. Put a cache in front, since popular links get most of the traffic.","<b>Deep dives:</b> 301 is cached by browsers (less load, worse analytics); 302 always hits you (better analytics). Count clicks asynchronously through a queue."],
+    say:"I'll generate codes by base-62 encoding a unique 64-bit ID, so there are no collisions to check, and serve redirects from a cache in front of a key-value store.",
+    q:"Why base-62 encode a unique counter instead of hashing the long URL?",
+    opts:["Hashing is illegal","A unique ID guarantees no collisions, so no lookup-and-retry is needed","Base-62 is encrypted","Counters use less memory than strings"], a:1,
+    why:"Hashes can collide and force extra database checks. A unique ID encoded in base-62 is collision-free by construction." },
+
+  { id:"q-feed", kind:"design", group:"Interview questions", title:"Design a news feed", tag:"Posts from everyone you follow",
+    eli5:"You can deliver party invitations two ways. You can walk to every friend's mailbox when you send one, or every friend can come to your house and check if you have anything new. For most kids, walking to mailboxes is easy. But a super-popular kid with a million friends can't walk to a million mailboxes, so their friends come and check instead.",
+    real:"Show each user a ranked list of recent posts from people they follow. The core decision is fan-out on write (push into followers' feeds) versus fan-out on read (pull at view time), usually combined.",
+    flow:["Post service","Queue","Fan-out workers",["Feed cache per user","Post DB"]],
+    points:["<b>Requirements:</b> publish posts, view a feed sorted by time or rank, follow users. Feed loads under 200 ms.","<b>Fan-out on write:</b> when you post, push the post ID into each follower's feed cache. Fast reads, heavy writes.","<b>Fan-out on read:</b> build the feed when it's opened. Cheap writes, slow reads.","<b>Hybrid:</b> push for normal users, pull for celebrities with millions of followers, and merge at read time.","<b>Storage:</b> feed caches hold only post IDs; post content lives in a post store and is fetched in bulk.","<b>Deep dives:</b> ranking, pagination with cursors, and media served from a CDN."],
+    say:"I'll use a hybrid: fan-out on write for most users, and fan-out on read for accounts above about 100K followers, merged when the feed loads.",
+    q:"Why not fan out on write for a celebrity with 50 million followers?",
+    opts:["Celebrities post less","One post would trigger 50 million feed writes","Their posts are private","Caches can't store celebrity posts"], a:1,
+    why:"A single post would create a massive write storm. Pulling celebrity posts at read time avoids it." },
+
+  { id:"q-chat", kind:"design", group:"Interview questions", title:"Design a chat app", tag:"Messages that arrive instantly",
+    eli5:"Imagine a mail carrier who knows exactly which room every kid is in right now. When you hand them a note, they run it straight to your friend. If your friend went home, the carrier keeps the note in a box and gives it to them tomorrow.",
+    real:"Deliver one-to-one and group messages in real time, keep message history, and handle offline users. WebSockets plus a presence service plus durable message storage.",
+    flow:["Sender","Chat server (WebSocket)",["Presence: who is online where","Message store"],"Receiver's chat server"],
+    points:["<b>Requirements:</b> 1:1 and group chat, delivered and read receipts, online status, history, offline delivery.","<b>Connections:</b> clients hold a WebSocket to a chat server. A presence service maps user ID to the server holding their connection.","<b>Sending:</b> the message is saved first, then routed to the receiver's server, then pushed down their socket.","<b>Offline users:</b> store the message and send a push notification; deliver when they reconnect.","<b>Storage:</b> a wide-column store keyed by conversation ID and message ID, which is time-sortable.","<b>Deep dives:</b> message ordering per conversation, group fan-out, end-to-end encryption, and reconnect storms."],
+    say:"Each message is persisted before it's acknowledged, keyed by conversation ID with time-sortable message IDs, so history is one range scan.",
+    q:"How does the system know which chat server to send a message to?",
+    opts:["It broadcasts to all servers","A presence service maps each online user to their server","DNS resolves the user","The client polls every server"], a:1,
+    why:"Presence tracking lets you route each message to exactly the server holding the recipient's connection." },
+
+  { id:"q-video", kind:"design", group:"Interview questions", title:"Design a video streaming platform", tag:"Upload once, watch everywhere",
+    eli5:"You cut a long movie into lots of small pieces, and you make each piece in a big size for the TV and a small size for a phone. Then you put copies in shops all over town. Your player grabs piece after piece, picking the size that fits how fast your internet is right now.",
+    real:"Users upload videos that get transcoded into many resolutions and split into short segments, then streamed from a CDN with adaptive bitrate.",
+    flow:["Upload","Blob storage","Transcode queue","Workers",["CDN","Metadata DB"],"Player"],
+    points:["<b>Requirements:</b> upload, stream smoothly on any device, search, view counts. Viewing vastly outnumbers uploading.","<b>Upload:</b> resumable chunked uploads straight to blob storage with a signed URL, so app servers don't carry the bytes.","<b>Processing:</b> a queue feeds transcoding workers that create 240p to 4K versions in 2–10 second segments (HLS or DASH).","<b>Streaming:</b> segments are served from a CDN. Adaptive bitrate lets the player switch quality as bandwidth changes.","<b>Metadata:</b> titles, owners and status in a database; view counts are aggregated asynchronously.","<b>Deep dives:</b> cost (keep rarely watched videos in fewer formats), popular content pre-warmed on the CDN, copyright checks."],
+    say:"Uploads go straight to blob storage; a queue drives transcoding into segmented renditions, and playback is entirely CDN-served with adaptive bitrate.",
+    q:"Why split videos into short segments at several resolutions?",
+    opts:["To save upload time","So the player can switch quality mid-video as the network changes","Because databases can't store video","To hide the video from search"], a:1,
+    why:"Segments at multiple bitrates let adaptive streaming pick the best quality for each few seconds." },
+
+  { id:"q-docs", kind:"design", group:"Interview questions", title:"Design a collaborative document editor", tag:"Many people typing at once",
+    eli5:"Two kids color the same picture at the same time. One colors the sun yellow while the other draws a bird next to it. A referee watches both and makes sure both changes end up on the picture, even though they happened at the same moment.",
+    real:"Multiple users edit the same document live and everyone converges to the same text. The core problem is merging concurrent edits, solved with operational transformation or CRDTs.",
+    flow:["Editors (WebSocket)","Collaboration server",["Operation log","Snapshots"]],
+    points:["<b>Requirements:</b> real-time co-editing, cursors of others, offline edits that merge later, version history.","<b>Operations, not files:</b> clients send small edits like insert \"a\" at position 5.","<b>Operational transformation:</b> a central server orders operations and adjusts positions of concurrent edits.","<b>CRDTs:</b> data structures that merge in any order without a central referee. Great for offline and peer-to-peer.","<b>Storage:</b> an append-only operation log plus periodic snapshots, which also gives you version history.","<b>Deep dives:</b> one collaboration server per document (route by document ID), presence and cursors, permissions."],
+    say:"All edits for a document route to one collaboration server by document ID, which orders and transforms operations, appends them to a log, and broadcasts them to every editor.",
+    q:"Two users type at the same spot at the same moment. What makes sure everyone ends up with the same text?",
+    opts:["Last save wins","Operational transformation or a CRDT merges both edits consistently","Locking the whole document","Asking the users to retry"], a:1,
+    why:"OT and CRDTs are built so concurrent edits converge to the same result on every screen." },
+
+  { id:"q-crawler", kind:"design", group:"Interview questions", title:"Design a web crawler", tag:"Visit and save the whole web",
+    eli5:"A librarian wants a copy of every book in every library in the world. She keeps a list of libraries to visit. At each one, she copies the books and writes down any new library addresses she finds. She skips places she's already been, and she doesn't visit the same small library too many times in one day.",
+    real:"Download billions of pages, extract links, and keep going, while avoiding duplicates and respecting each site's limits.",
+    flow:["URL frontier","Fetchers","Parser",["Content store","Seen-URL filter"],"New URLs → frontier"],
+    points:["<b>Requirements:</b> crawl billions of pages, refresh popular pages often, obey robots.txt, be polite to each host.","<b>Estimates:</b> 1B pages a month is about 400 pages per second; at 500 KB each that is roughly 500 TB a month.","<b>URL frontier:</b> priority queues for importance, plus per-host queues so you never hammer one site.","<b>Dedup:</b> a Bloom filter for seen URLs and content hashes to skip duplicate pages.","<b>Fetchers:</b> many distributed workers with cached DNS lookups and timeouts.","<b>Deep dives:</b> spider traps (infinite calendars), recrawl scheduling, partitioning the frontier by host."],
+    say:"The frontier keeps one queue per host for politeness and a priority layer above it, and we check a Bloom filter before adding any URL.",
+    q:"How does the crawler avoid overloading a single website?",
+    opts:["It only crawls at night","Per-host queues with a delay between requests to the same host","It uses a CDN","It downloads only images"], a:1,
+    why:"Grouping URLs by host and rate-limiting each host keeps the crawler polite." },
+
+  { id:"q-autocomplete", kind:"design", group:"Interview questions", title:"Design search autocomplete", tag:"Finish my sentence",
+    eli5:"You have a friend who has heard everyone in town talk. When you say \"How do I...\", they instantly guess the five things people say most often after those words. They don't think hard each time. They already have the answers ready.",
+    real:"Return the top suggestions for a typed prefix within tens of milliseconds. Precompute the top results per prefix from query logs and serve them from memory.",
+    flow:["Keystroke","Autocomplete service","Trie with top-5 per prefix",["Cache","Built offline from logs"]],
+    points:["<b>Requirements:</b> top 5 suggestions per prefix, under 100 ms, ranked by popularity, refreshed daily or hourly.","<b>Data structure:</b> a trie where each node stores its precomputed top-k completions, so a lookup is just walking the prefix.","<b>Building:</b> an offline job aggregates query logs, counts frequencies and rebuilds the trie. Swap it in atomically.","<b>Serving:</b> trie replicas in memory, sharded by prefix range; browsers and CDNs cache common prefixes.","<b>Client tricks:</b> debounce keystrokes by about 100 ms so you don't send a request for every letter.","<b>Deep dives:</b> trending queries with a faster pipeline, filtering unsafe suggestions, personalization."],
+    say:"Each trie node stores its top five completions, built offline from query logs, so serving is an in-memory prefix walk with no ranking at request time.",
+    q:"Why store the top-k results inside each trie node?",
+    opts:["To save disk","So a lookup is instant without scanning every word under the prefix","Because tries can't store words","To support deletion"], a:1,
+    why:"Precomputing top-k moves the expensive work offline and makes each request a quick walk down the trie." },
+
+  { id:"q-nearby", kind:"design", group:"Interview questions", title:"Design a nearby places service", tag:"What's close to me?",
+    eli5:"Draw squares on a map of your town, like a checkerboard. To find ice cream near you, you don't look at the whole town. You look in your square and the squares touching it.",
+    real:"Given a location, return nearby businesses or drivers quickly. Split the map into cells with geohashes or a quadtree so lookups only touch a few cells.",
+    flow:["User location","Geohash cell + neighbors","Geo index",["Place details DB","Cache"]],
+    points:["<b>Requirements:</b> search within a radius, filter by type, results in under 200 ms. Places change rarely; reads are huge.","<b>Geohash:</b> encodes latitude and longitude into a string where a shared prefix means nearby. Index by prefix.","<b>Quadtree:</b> splits dense areas into smaller squares and leaves sparse areas big. Good for uneven density.","<b>Query:</b> look up the user's cell and its 8 neighbors, then filter by exact distance.","<b>Scaling:</b> the index fits in memory and is read-only most of the time, so replicate it widely.","<b>Deep dives:</b> moving objects like drivers need frequent updates, so keep their locations in memory, not a disk index."],
+    say:"I'll index places by geohash, search the user's cell plus its eight neighbors, then filter by exact distance and rank.",
+    q:"Why also search the neighboring cells, not just the user's own cell?",
+    opts:["To show more ads","A place just across a cell border can be closer than places inside your cell","Neighbors are cheaper to search","Geohash requires it to compute"], a:1,
+    why:"Cell borders are arbitrary, so the closest result may sit right on the other side of one." },
+
+  { id:"q-kv", kind:"design", group:"Interview questions", title:"Design a distributed key-value store", tag:"A giant locker room that never loses a locker",
+    eli5:"Imagine millions of lockers spread across many rooms. Each locker's stuff is copied into three different rooms, so if one room floods, nothing is lost. When you put something in, you wait until at least two rooms say \"got it.\"",
+    real:"Store and fetch values by key across many machines with high availability. Combines consistent hashing, replication, quorums and failure detection.",
+    flow:["Client","Coordinator node","Hash ring",["Replica 1","Replica 2","Replica 3"]],
+    points:["<b>Requirements:</b> get and put, huge scale, highly available, tunable consistency.","<b>Partitioning:</b> consistent hashing with virtual nodes spreads keys and limits data movement.","<b>Replication:</b> each key is stored on N nodes, usually 3, across racks or zones.","<b>Quorum:</b> with N replicas, write to W and read from R. If R plus W is greater than N, reads see the latest write.","<b>Conflicts:</b> versions or vector clocks detect concurrent writes; resolve with last-write-wins or app logic.","<b>Failures:</b> gossip protocol for membership, hinted handoff for temporarily down nodes, Merkle trees to repair replicas."],
+    say:"With three replicas, I'd write to two and read from two, so every read overlaps the latest write while one node can still be down.",
+    q:"With N = 3 replicas, which settings guarantee reads see the latest write?",
+    opts:["W = 1, R = 1","W = 2, R = 2","W = 1, R = 2","W = 0, R = 3"], a:1,
+    why:"R + W = 4 is greater than N = 3, so the read set and write set always overlap in at least one node." },
+
+  { id:"q-notify", kind:"design", group:"Interview questions", title:"Design a notification system", tag:"Tell the right person, the right way",
+    eli5:"The school wants to tell parents about a snow day. A messenger checks each family's choice: phone call, email or a paper note. Then helpers deliver them. If a phone call doesn't go through, they try again, but they never call the same family about the same snow day twice.",
+    real:"Send push, SMS and email notifications at scale, respecting user preferences, with retries and no duplicates.",
+    flow:["Services","Notification service",["Push queue","SMS queue","Email queue"],"Providers (APNs, FCM, SMS, email)"],
+    points:["<b>Requirements:</b> multiple channels, user preferences and opt-outs, millions per minute, soft real time.","<b>Flow:</b> services call one notification API; it checks preferences and templates, then puts jobs on a queue per channel.","<b>Workers:</b> per-channel workers call external providers like APNs, FCM, SMS gateways and email services.","<b>Reliability:</b> retries with backoff, a dead-letter queue, and an idempotency key per notification to avoid duplicates.","<b>Protection:</b> rate-limit per user so nobody gets spammed; respect quiet hours.","<b>Deep dives:</b> tracking delivery and open rates, priority lanes for urgent messages like one-time codes."],
+    say:"Each channel has its own queue and workers, so a slow email provider never delays push notifications, and every notification carries an idempotency key.",
+    q:"Why give each channel its own queue?",
+    opts:["Queues are free","A slow or failing provider in one channel doesn't block the others","Email needs a database","It's required by APNs"], a:1,
+    why:"Separating channels isolates failures and lets each one scale independently." },
+
+  { id:"q-drive", kind:"design", group:"Interview questions", title:"Design cloud file storage", tag:"Files synced on every device",
+    eli5:"You have a giant book, and you change one page. Instead of mailing the whole book to your grandma again, you mail only the page you changed. Her copy stays the same as yours, and it's much faster.",
+    real:"Upload, store and sync files across devices and share them. Split files into chunks, store chunks in blob storage, and keep file metadata in a database.",
+    flow:["Desktop / phone client","Metadata service",["Metadata DB","Blob storage (chunks)"],"Sync notifications"],
+    points:["<b>Requirements:</b> upload and download, sync across devices, sharing, version history, files up to many GB.","<b>Chunking:</b> split files into 4 MB chunks identified by content hash. Upload only chunks that changed.","<b>Dedup:</b> identical chunks are stored once across all users, which saves huge amounts of space.","<b>Metadata:</b> a relational DB holds files, folders, versions and the list of chunks per version, which needs strong consistency.","<b>Sync:</b> clients keep a long-poll or WebSocket open and get notified to pull changes.","<b>Deep dives:</b> conflicts when two devices edit offline (keep both copies), cold storage for old versions, resumable uploads."],
+    say:"Files are split into content-hashed 4 MB chunks in blob storage, so edits upload only changed chunks and identical chunks are stored once.",
+    q:"You edit one paragraph of a 2 GB file. With chunking, what gets uploaded?",
+    opts:["The whole 2 GB file","Only the chunk or chunks that changed","Nothing; the server guesses","A compressed copy of the whole file"], a:1,
+    why:"Content-hashed chunks let the client detect and send just the changed pieces." }
+];
+
+/* ---------------- storage (optional, per browser) ---------------- */
+const LS = "sds-progress-v1", LS_SET = "sds-podcast-settings-v1";
+function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch (e) { return fallback; } }
+function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+let done = new Set(load(LS, []));
+const settings = Object.assign({ rate: 1, autoNext: true, thinkPause: true, vM: "", vL: "" }, load(LS_SET, {}));
+const saveSettings = () => store(LS_SET, settings);
+
+const $ = s => document.querySelector(s);
+const toc = $("#toc"), page = $("#page");
+let mode = "learn";
+let currentId = TOPICS[0].id;
+const idxOf = id => TOPICS.findIndex(t => t.id === id);
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+
+/* ---------------- table of contents ---------------- */
+function renderToc() {
+  const groups = [...new Set(TOPICS.map(t => t.group))];
+  toc.innerHTML = groups.map(g => `<h3>${g}</h3><div class="group">` +
+    TOPICS.filter(t => t.group === g).map(t => {
+      const n = idxOf(t.id) + 1;
+      const lead = mode === "listen" ? `<span class="epnum">${String(n).padStart(2, "0")}</span>` : `<span class="dot" aria-hidden="true">✓</span>`;
+      return `<button data-id="${t.id}" class="${done.has(t.id) ? "done" : ""}" aria-current="${mode !== "quiz" && t.id === currentId}">${lead}${t.title}</button>`;
+    }).join("") + `</div>`).join("");
+  toc.querySelectorAll("button").forEach(b => b.onclick = () => {
+    location.hash = (mode === "listen" ? "listen-" : "") + b.dataset.id;
+  });
+  $("#bar").style.width = (done.size / TOPICS.length * 100) + "%";
+  $("#ptext").textContent = `${done.size} / ${TOPICS.length} understood`;
+}
+
+/* ---------------- read view ---------------- */
+function flowHTML(flow) {
+  return `<div class="flow-box"><div class="flow">` + flow.map((step, i) => {
+    const node = Array.isArray(step) ? `<div class="stack">${step.map(s => `<div class="node">${s}</div>`).join("")}</div>`
+      : step === "vs" ? `<span class="arrow">vs</span>` : `<div class="node">${step}</div>`;
+    const next = flow[i + 1];
+    const arrow = i < flow.length - 1 && step !== "vs" && next !== "vs" ? `<span class="arrow" aria-hidden="true">→</span>` : "";
+    return node + arrow;
+  }).join("") + `</div></div>`;
+}
+
+function quizHTML(t, idx) {
+  return `<div class="quiz" data-id="${t.id}">
+    <p class="q">${idx != null ? (idx + 1) + ". " : ""}${t.q}</p>
+    <div class="opts">${t.opts.map((o, i) => `<button class="opt" data-i="${i}">${o}</button>`).join("")}</div>
+    <p class="why" hidden></p></div>`;
+}
+
+function wireQuiz(root, onAnswer) {
+  root.querySelectorAll(".quiz").forEach(qz => {
+    const t = TOPICS.find(x => x.id === qz.dataset.id);
+    qz.querySelectorAll(".opt").forEach(btn => btn.onclick = () => {
+      const pick = +btn.dataset.i;
+      qz.querySelectorAll(".opt").forEach((b, i) => { b.disabled = true; if (i === t.a) b.classList.add("right"); });
+      if (pick !== t.a) btn.classList.add("wrong");
+      const why = qz.querySelector(".why");
+      why.innerHTML = (pick === t.a ? "<b>Correct.</b> " : "<b>Not quite.</b> ") + t.why;
+      why.hidden = false;
+      onAnswer && onAnswer(pick === t.a);
+    });
+  });
+}
+
+function renderTopic() {
+  const i = idxOf(currentId), t = TOPICS[i], isDone = done.has(t.id);
+  page.innerHTML = `
+    <div class="head-row">
+      <div><div class="eyebrow">${t.group} · ${i + 1} of ${TOPICS.length}</div>
+        <h2>${t.title}</h2><p class="tagline">${t.tag}</p></div>
+      <button class="btn" id="listen">▶ Listen to this episode</button>
+    </div>
+    <div class="story"><span class="lbl">Like you're 5</span><p>${t.eli5}</p></div>
+    <div class="section"><span class="lbl">${t.kind === "design" ? "The architecture" : "How it looks"}</span>${flowHTML(t.flow)}</div>
+    <div class="section"><span class="lbl">${t.kind === "design" ? "The approach" : "The grown-up version"}</span><p>${t.real}</p></div>
+    <div class="two">
+      <div class="section"><span class="lbl">${t.kind === "design" ? "The design, step by step" : "What interviewers listen for"}</span><ul>${t.points.map(p => `<li>${p}</li>`).join("")}</ul></div>
+      <div class="section"><span class="lbl">Say it like this in the interview</span><p class="say">"${t.say}"</p></div>
+    </div>
+    <div class="section"><span class="lbl">Check yourself</span>${quizHTML(t)}</div>
+    <div class="actions">
+      <button class="btn ${isDone ? "got" : "primary"}" id="got">${isDone ? "✓ I understand this" : "Mark as understood"}</button>
+      <div class="navbtns">
+        <button class="btn" id="prev" ${i === 0 ? "disabled" : ""}>← Previous</button>
+        <button class="btn" id="next" ${i === TOPICS.length - 1 ? "disabled" : ""}>Next →</button>
+      </div>
+    </div>`;
+  wireQuiz(page);
+  $("#listen").onclick = () => { location.hash = "listen-" + t.id; };
+  $("#got").onclick = () => { done.has(t.id) ? done.delete(t.id) : done.add(t.id); store(LS, [...done]); renderTopic(); renderToc(); };
+  $("#prev").onclick = () => { location.hash = TOPICS[i - 1].id; };
+  $("#next").onclick = () => { location.hash = TOPICS[i + 1].id; };
+}
+
+/* ---------------- quiz-all view ---------------- */
+function renderQuizAll() {
+  let answered = 0, right = 0;
+  const order = TOPICS.slice().sort(() => Math.random() - .5);
+  page.innerHTML = `
+    <div><div class="eyebrow">Mixed review</div><h2>Quiz me on everything</h2>
+      <p class="tagline">${TOPICS.length} questions in random order. Missed one? Open its topic on the left and read or listen again.</p></div>
+    <div class="score" id="score">0 / ${TOPICS.length} answered</div>
+    <div class="qa-list">${order.map((t, i) => quizHTML(t, i)).join("")}</div>
+    <div class="actions"><button class="btn primary" id="again">Shuffle and restart</button></div>`;
+  wireQuiz(page, ok => {
+    answered++; if (ok) right++;
+    $("#score").textContent = answered === TOPICS.length
+      ? `You got ${right} / ${TOPICS.length}. ${right >= TOPICS.length * 0.9 ? "Interview ready!" : right >= TOPICS.length * 0.65 ? "Close. Review the ones you missed." : "Keep going through the stories, you'll get there."}`
+      : `${right} right · ${answered} / ${TOPICS.length} answered`;
+  });
+  $("#again").onclick = renderQuizAll;
+}
+
+/* ---------------- podcast: script ---------------- */
+const HOSTS = {
+  M: { name: "Maya", role: "the engineer", pitch: 1.05 },
+  L: { name: "Leo", role: "prepping for interviews", pitch: 0.9 }
+};
+const OPEN = ["Okay Maya, explain it like I'm five.", "Pretend I'm five years old. Go.", "Kid version first, please.", "Start me off simple. Really simple."];
+const REACT = ["Okay, that actually makes sense. So what's the grown-up version?", "I like that. Now how does it work in a real system?", "Ha, I can picture that. What does it look like at real scale?", "Got it. Now give me the engineer version."];
+const ASK = ["And in the interview, what is the interviewer actually listening for?", "What do I need to mention so the interviewer knows I really get it?", "What are the trade-offs I should bring up?"];
+const POINT_LEAD = ["First:", "Next:", "Also:", "Another one:", "And:", "Last one:"];
+const LETTERS = ["A", "B", "C", "D"];
+
+const plain = s => s.replace(/<[^>]+>/g, "");
+function speakable(s) {
+  return plain(s)
+    .replace(/10⁵/g, "ten to the fifth").replace(/62⁷/g, "62 to the seventh").replace(/≈/g, " about ").replace(/~\s?/g, "about ")
+    .replace(/×/g, " times ").replace(/÷/g, " divided by ").replace(/µs/g, " microseconds")
+    .replace(/(\d) ?ns\b/g, "$1 nanoseconds").replace(/(\d) ?ms\b/g, "$1 milliseconds")
+    .replace(/(\d)\/(\w)/g, "$1 out of $2").replace(/(\d)\s?–\s?(\d)/g, "$1 to $2")
+    .replace(/→/g, " then ").replace(/[–—·⇄]/g, ", ").replace(/_/g, " ").replace(/\bQPS\b/g, "queries per second")
+    .replace(/\s+/g, " ").trim();
+}
+
+function buildScript(i) {
+  const t = TOPICS[i], next = TOPICS[i + 1], L = [];
+  const say = (who, text) => L.push({ who, text });
+  if (i === 0) {
+    say("L", "Welcome to System Design Storybook. I'm Leo, and I'm getting ready for a big tech interview.");
+    say("M", "And I'm Maya. I've sat on the other side of the table a lot, so I'll explain every idea like you're five, then give you the real version.");
+  } else {
+    say("L", `Welcome back to System Design Storybook, episode ${i + 1}. I'm Leo.`);
+  }
+  const design = t.kind === "design";
+  say("M", `${i === 0 ? "" : "And I'm Maya. "}${design ? `Today is a full interview question. The interviewer says: ${t.title}. ${t.tag}.` : `Today's topic is ${t.title}. ${t.tag}.`}`);
+  say("L", design ? "That sounds big. Before any boxes and arrows, explain the idea like I'm five." : OPEN[i % OPEN.length]);
+  say("M", t.eli5);
+  say("L", design ? "Okay, so what is the system really doing?" : REACT[i % REACT.length]);
+  say("M", t.real);
+  say("L", design ? "Walk me through it the way I should do it in the interview, step by step." : ASK[i % ASK.length]);
+  t.points.forEach((p, k) => say("M", design
+    ? `${k === t.points.length - 1 ? "And finally" : "Step " + (k + 1)}. ${plain(p)}`
+    : (k === t.points.length - 1 && k > 0 ? "Last one: " : POINT_LEAD[k] + " ") + plain(p)));
+  say("L", "Give me a line I can actually say out loud in the room.");
+  say("M", `Try this: ${t.say}`);
+  say("L", "Okay. Quiz me.");
+  say("M", `Here's the question. ${t.q} ` + t.opts.map((o, k) => `${k === t.opts.length - 1 ? "or " : ""}${LETTERS[k]}: ${o}`).join(". ") + ".");
+  L.push({ pause: 5000, text: "Thinking time. Pick your answer." });
+  say("M", `The answer is ${LETTERS[t.a]}: ${t.opts[t.a]}. ${t.why}`);
+  say("L", next ? `Got it. Next episode, we tackle ${next.title}.` : "That's the whole series. Go back to any episode you want to hear again, and good luck in the interview.");
+  say("M", next ? "See you there." : "You've got this.");
+  return L;
+}
+
+/* ---------------- podcast: speech engine ---------------- */
+const TTS = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+const P = { ep: -1, lines: [], li: 0, playing: false, gen: 0 };
+let voices = [];
+
+function pickDefault(preferred, avoid) {
+  const tryRe = re => voices.find(v => re.test(v.name) && v.voiceURI !== avoid);
+  return tryRe(preferred) || voices.find(v => v.voiceURI !== avoid && v.localService) || voices.find(v => v.voiceURI !== avoid) || voices[0];
+}
+function loadVoices() {
+  if (!TTS) return;
+  const all = speechSynthesis.getVoices();
+  voices = all.filter(v => /^en/i.test(v.lang));
+  if (!voices.length) voices = all;
+  if (!voices.length) return;
+  if (!voices.some(v => v.voiceURI === settings.vM)) settings.vM = (pickDefault(/female|samantha|zira|aria|jenny|libby|sonia|karen|google us english/i) || {}).voiceURI || "";
+  if (!voices.some(v => v.voiceURI === settings.vL)) settings.vL = (pickDefault(/\bmale|david|guy|daniel|ryan|george|alex|google uk english male/i, settings.vM) || {}).voiceURI || "";
+  fillVoiceSelects();
+}
+function voiceFor(who) { return voices.find(v => v.voiceURI === (who === "M" ? settings.vM : settings.vL)); }
+function chunks(text) { const s = speakable(text); return s.match(/[^.!?]+[.!?]+["')]*\s*|[^.!?]+$/g) || [s]; }
+
+function loadEpisode(i) {
+  if (P.ep === i) return;
+  stopSpeech();
+  P.ep = i; P.lines = buildScript(i); P.li = 0;
+}
+function stopSpeech() { P.gen++; P.playing = false; if (TTS) speechSynthesis.cancel(); }
+function playFrom(li) {
+  if (!TTS) return;
+  stopSpeech();
+  P.li = li; P.playing = true;
+  const g = P.gen;
+  updatePlayer();
+  setTimeout(() => runLine(g), 80); // small gap: some browsers drop speech queued right after cancel()
+}
+function pause() { stopSpeech(); updatePlayer(); }
+
+function runLine(g) {
+  if (g !== P.gen) return;
+  if (P.li >= P.lines.length) { P.playing = false; P.li = P.lines.length; updatePlayer(); episodeEnded(); return; }
+  updatePlayer();
+  const line = P.lines[P.li];
+  if (line.pause != null) {
+    if (!settings.thinkPause) { P.li++; return runLine(g); }
+    setTimeout(() => { if (g !== P.gen) return; P.li++; runLine(g); }, line.pause);
+    return;
+  }
+  const parts = chunks(line.text); let k = 0;
+  const host = HOSTS[line.who], v = voiceFor(line.who);
+  const sameVoice = settings.vM === settings.vL;
+  const sayNext = () => {
+    if (g !== P.gen) return;
+    if (k >= parts.length) { P.li++; setTimeout(() => runLine(g), 280); return; }
+    const u = new SpeechSynthesisUtterance(parts[k++]);
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = settings.rate;
+    u.pitch = sameVoice ? (line.who === "M" ? 1.2 : 0.8) : host.pitch;
+    u.onend = sayNext;
+    u.onerror = e => { if (e.error === "interrupted" || e.error === "canceled") return; sayNext(); };
+    speechSynthesis.speak(u);
+  };
+  sayNext();
+}
+
+function episodeEnded() {
+  const t = TOPICS[P.ep];
+  if (settings.autoNext && P.ep < TOPICS.length - 1 && mode === "listen") {
+    location.hash = "listen-" + TOPICS[P.ep + 1].id;
+    loadEpisode(P.ep + 1);
+    renderListen(); playFrom(0);
+  }
+}
+
+/* ---------------- podcast: view ---------------- */
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>',
+  next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>',
+  back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 6v12L3 12zM21 6v12l-8-6z"/></svg>',
+  fwd: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 6v12l8-6zM3 6v12l8-6z"/></svg>'
+};
+const wordsIn = lines => lines.reduce((n, l) => n + (l.pause ? 0 : l.text.split(/\s+/).length), 0);
+const fmtMin = words => { const m = words / (160 * settings.rate); return m < 1 ? "under 1 min" : `${Math.round(m)} min`; };
+
+function fillVoiceSelects() {
+  ["M", "L"].forEach(w => {
+    const sel = document.getElementById("voice-" + w);
+    if (!sel) return;
+    sel.innerHTML = voices.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)} (${esc(v.lang)})</option>`).join("");
+    sel.value = w === "M" ? settings.vM : settings.vL;
+  });
+}
+
+function renderListen() {
+  const i = idxOf(currentId), t = TOPICS[i];
+  loadEpisode(i);
+  const total = wordsIn(P.lines);
+  page.innerHTML = `
+    <div class="deck">
+      <div><div class="eyebrow">Episode ${String(i + 1).padStart(2, "0")} of ${TOPICS.length} · ${t.group}</div>
+        <h2>${t.title}</h2><p class="tagline">${t.tag} · about ${fmtMin(total)}</p></div>
+      <div class="hosts">
+        <span class="host" id="host-M"><span class="avatar av-M">M</span><span><b>Maya</b> · ${HOSTS.M.role}</span></span>
+        <span class="host" id="host-L"><span class="avatar av-L">L</span><span><b>Leo</b> · ${HOSTS.L.role}</span></span>
+      </div>
+      ${TTS ? "" : `<div class="notice">This browser can't read text aloud. Open the page in a recent Chrome, Edge, Safari or Firefox to use the podcast. You can still read the transcript below.</div>`}
+      <div class="controls">
+        <button class="ctrl" id="p-prev" aria-label="Previous episode" ${i === 0 ? "disabled" : ""}>${ICON.prev}</button>
+        <button class="ctrl" id="p-back" aria-label="Back one line">${ICON.back}</button>
+        <button class="ctrl play" id="p-play" aria-label="Play" ${TTS ? "" : "disabled"}>${ICON.play}</button>
+        <button class="ctrl" id="p-fwd" aria-label="Forward one line">${ICON.fwd}</button>
+        <button class="ctrl" id="p-next" aria-label="Next episode" ${i === TOPICS.length - 1 ? "disabled" : ""}>${ICON.next}</button>
+        <div class="meter"><div class="track"><i id="p-track"></i></div>
+          <div class="meta"><span id="p-pos">Line 0 / ${P.lines.length}</span><span id="p-left"></span></div></div>
+      </div>
+      <div class="settings">
+        <label>Speed <select id="p-rate">${[0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75].map(r => `<option value="${r}" ${r == settings.rate ? "selected" : ""}>${r}×</option>`).join("")}</select></label>
+        <label>Maya's voice <select id="voice-M"></select></label>
+        <label>Leo's voice <select id="voice-L"></select></label>
+        <label><input type="checkbox" id="p-auto" ${settings.autoNext ? "checked" : ""}> Play next episode automatically</label>
+        <label><input type="checkbox" id="p-think" ${settings.thinkPause ? "checked" : ""}> Pause 5 seconds before quiz answers</label>
+      </div>
+    </div>
+    <div class="section">
+      <span class="lbl">Transcript · tap any line to play from there</span>
+      <div class="transcript" id="transcript">${P.lines.map((l, k) => l.pause != null
+        ? `<button class="tline pause" data-k="${k}"><span class="who"></span><span>${l.text}</span></button>`
+        : `<button class="tline" data-k="${k}"><span class="who ${l.who}">${HOSTS[l.who].name}</span><span>${esc(plain(l.text))}</span></button>`).join("")}</div>
+    </div>
+    <div class="actions">
+      <button class="btn ${done.has(t.id) ? "got" : "primary"}" id="got">${done.has(t.id) ? "✓ I understand this" : "Mark as understood"}</button>
+      <button class="btn" id="read">Read this topic instead</button>
+    </div>`;
+
+  fillVoiceSelects();
+  $("#p-play").onclick = () => P.playing ? pause() : playFrom(P.li >= P.lines.length ? 0 : P.li);
+  $("#p-back").onclick = () => { const to = Math.max(0, P.li - 1); P.playing ? playFrom(to) : (P.li = to, updatePlayer()); };
+  $("#p-fwd").onclick = () => { const to = Math.min(P.lines.length - 1, P.li + 1); P.playing ? playFrom(to) : (P.li = to, updatePlayer()); };
+  $("#p-prev").onclick = () => { if (i > 0) { const was = P.playing; location.hash = "listen-" + TOPICS[i - 1].id; if (was) setTimeout(() => playFrom(0), 0); } };
+  $("#p-next").onclick = () => { if (i < TOPICS.length - 1) { const was = P.playing; location.hash = "listen-" + TOPICS[i + 1].id; if (was) setTimeout(() => playFrom(0), 0); } };
+  $("#p-rate").onchange = e => { settings.rate = +e.target.value; saveSettings(); if (P.playing) playFrom(P.li); };
+  $("#voice-M").onchange = e => { settings.vM = e.target.value; saveSettings(); if (P.playing) playFrom(P.li); };
+  $("#voice-L").onchange = e => { settings.vL = e.target.value; saveSettings(); if (P.playing) playFrom(P.li); };
+  $("#p-auto").onchange = e => { settings.autoNext = e.target.checked; saveSettings(); };
+  $("#p-think").onchange = e => { settings.thinkPause = e.target.checked; saveSettings(); };
+  $("#transcript").querySelectorAll(".tline").forEach(b => b.onclick = () => playFrom(+b.dataset.k));
+  $("#got").onclick = () => { done.has(t.id) ? done.delete(t.id) : done.add(t.id); store(LS, [...done]); renderListen(); renderToc(); };
+  $("#read").onclick = () => { location.hash = t.id; };
+  updatePlayer();
+}
+
+let lastScrolled = -1;
+function updatePlayer() {
+  const play = $("#p-play");
+  if (!play) return;
+  play.innerHTML = P.playing ? ICON.pause : ICON.play;
+  play.setAttribute("aria-label", P.playing ? "Pause" : "Play");
+  const n = P.lines.length, cur = Math.min(P.li, n);
+  $("#p-track").style.width = (cur / n * 100) + "%";
+  $("#p-pos").textContent = cur >= n ? "Episode finished" : `Line ${cur + 1} / ${n}`;
+  $("#p-left").textContent = cur >= n ? "" : `${fmtMin(wordsIn(P.lines.slice(cur)))} left`;
+  const line = P.lines[cur];
+  ["M", "L"].forEach(w => $("#host-" + w).classList.toggle("talking", P.playing && line && line.who === w));
+  document.querySelectorAll("#transcript .tline").forEach((el, k) => {
+    el.classList.toggle("now", k === cur && cur < n);
+    el.classList.toggle("past", k < cur);
+  });
+  if (P.playing && cur !== lastScrolled) {
+    lastScrolled = cur;
+    const el = document.querySelector(`#transcript .tline[data-k="${cur}"]`);
+    if (el) el.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+}
+
+/* ---------------- routing ---------------- */
+function setMode(m) {
+  if (m !== "listen" && P.playing) pause();
+  mode = m;
+  $("#tab-learn").setAttribute("aria-pressed", m === "learn");
+  $("#tab-listen").setAttribute("aria-pressed", m === "listen");
+  $("#tab-quiz").setAttribute("aria-pressed", m === "quiz");
+  if (m === "learn") renderTopic(); else if (m === "listen") renderListen(); else renderQuizAll();
+  renderToc();
+}
+function route() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (h === "quiz") return setMode("quiz");
+  const listen = h.startsWith("listen");
+  const id = listen ? h.replace(/^listen-?/, "") : h;
+  if (idxOf(id) >= 0) currentId = id;
+  setMode(listen ? "listen" : "learn");
+  if (h && window.innerWidth <= 820) page.scrollIntoView({ block: "start" });
+}
+
+$("#tab-learn").onclick = () => { location.hash = currentId; };
+$("#tab-listen").onclick = () => { location.hash = "listen-" + currentId; };
+$("#tab-quiz").onclick = () => { location.hash = "quiz"; };
+window.addEventListener("hashchange", route);
+document.addEventListener("keydown", e => {
+  if (mode !== "listen" || e.code !== "Space" || /^(BUTTON|SELECT|INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  e.preventDefault(); $("#p-play").click();
+});
+window.addEventListener("pagehide", () => { if (TTS) speechSynthesis.cancel(); });
+if (TTS) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+route();
+</script>
+</body>
+</html>
